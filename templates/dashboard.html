@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Medicine Box - IoT Live Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Top Header Navigation -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-icon">💊</div>
+        <div>
+          <h1 class="brand-title">Smart Medicine Box</h1>
+          <p class="brand-subtitle">ESP32 IoT Patient Adherence System</p>
+        </div>
+      </div>
+
+      <div class="header-status-group">
+        <div class="live-badge" id="connStatusBadge">
+          <span class="live-dot"></span>
+          <span id="connStatusText">Live Monitoring</span>
+        </div>
+
+        <div class="clock-widget">
+          <div class="clock-time" id="liveClock">--:--:--</div>
+          <div class="clock-date" id="liveDate">Loading...</div>
+        </div>
+
+        <nav class="nav-links">
+          <a href="/" class="nav-btn active">📊 Dashboard</a>
+          <a href="/history" class="nav-btn">📜 History Logs</a>
+          <button id="muteAudioBtn" class="nav-btn" title="Toggle audio beeper">🔊 Sound: ON</button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Emergency / Reminder Alert Banner -->
+    <div id="alertBanner" class="alert-banner">
+      <span id="alertBannerText">⚠️ Medication alert active!</span>
+      <button class="btn btn-outline" style="padding: 4px 12px; font-size: 12px;" onclick="triggerAction('reset')">Dismiss Alert</button>
+    </div>
+
+    <!-- Summary Metrics Row -->
+    <section class="stats-grid">
+      <div class="stat-card blue">
+        <div class="stat-header">
+          <span>Adherence Rate</span>
+          <span>📈</span>
+        </div>
+        <div class="stat-value" id="statCompliance">{{ stats.compliance_rate }}%</div>
+        <div class="stat-footer">Target: > 90% compliance</div>
+      </div>
+
+      <div class="stat-card green">
+        <div class="stat-header">
+          <span>Doses Taken</span>
+          <span>✅</span>
+        </div>
+        <div class="stat-value" id="statTaken">{{ stats.taken_count }}</div>
+        <div class="stat-footer">Confirmed via IR sensor</div>
+      </div>
+
+      <div class="stat-card red">
+        <div class="stat-header">
+          <span>Doses Missed</span>
+          <span>⚠️</span>
+        </div>
+        <div class="stat-value" id="statMissed">{{ stats.missed_count }}</div>
+        <div class="stat-footer">Time window exceeded</div>
+      </div>
+
+      <div class="stat-card yellow">
+        <div class="stat-header">
+          <span>Box Open / Moves</span>
+          <span>📦</span>
+        </div>
+        <div class="stat-value" id="statSecurity">{{ stats.box_open_count + stats.box_moved_count }}</div>
+        <div class="stat-footer">LDR & Tilt sensor events</div>
+      </div>
+    </section>
+
+    <!-- Main Dashboard Two-Column Layout -->
+    <main class="dashboard-grid">
+      
+      <!-- Left Column: Sensors & Live State -->
+      <section>
+        
+        <!-- Live Status Hero -->
+        <div class="status-hero" id="statusHero">
+          <div class="status-tag">Current Operational State</div>
+          <div class="status-large-text" id="mainStatusText">Monitoring</div>
+          <div class="status-desc" id="mainStatusDesc">All sensors nominal. Box is secure and waiting for scheduled dosage.</div>
+        </div>
+
+        <!-- Sensor HUD -->
+        <div class="card">
+          <h2 class="card-title">🔬 Live Sensor Telemetry</h2>
+          
+          <div class="sensor-hud-grid">
+            <!-- IR Sensor -->
+            <div class="sensor-card" id="cardIR">
+              <div class="sensor-icon">🖐️</div>
+              <div class="sensor-name">IR Sensor</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Pill Detection</div>
+              <span class="sensor-badge badge-gray" id="badgeIR">Clear (1)</span>
+            </div>
+
+            <!-- LDR Sensor -->
+            <div class="sensor-card" id="cardLDR">
+              <div class="sensor-icon">💡</div>
+              <div class="sensor-name">LDR Sensor</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Lid Light Level</div>
+              <span class="sensor-badge badge-gray" id="badgeLDR">Closed (0)</span>
+            </div>
+
+            <!-- Tilt Sensor -->
+            <div class="sensor-card" id="cardTilt">
+              <div class="sensor-icon">🔄</div>
+              <div class="sensor-name">Tilt Sensor</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Orientation / Tamper</div>
+              <span class="sensor-badge badge-gray" id="badgeTilt">Level (0)</span>
+            </div>
+
+            <!-- DS3231 RTC Module -->
+            <div class="sensor-card">
+              <div class="sensor-icon">⏱️</div>
+              <div class="sensor-name">DS3231 RTC</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Hardware Clock</div>
+              <span class="sensor-badge badge-blue" id="badgeRTC">Synchronized</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Medicine Schedule Table -->
+        <div class="card">
+          <h2 class="card-title">📅 Daily Dosage Schedule</h2>
+          <table class="schedule-table">
+            <thead>
+              <tr>
+                <th>Schedule Name</th>
+                <th>Time</th>
+                <th>Dosage / Medication</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in schedules %}
+              <tr>
+                <td><strong>{{ s.name }}</strong></td>
+                <td><span class="sensor-badge badge-blue">{{ s.time_str }}</span></td>
+                <td>{{ s.dosage }}</td>
+                <td><span class="sensor-badge badge-green">Active</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- Right Column: Virtual Hardware Emulation & Controls -->
+      <section>
+        
+        <!-- Virtual Hardware Emulation -->
+        <div class="card">
+          <h2 class="card-title">⚡ Virtual Hardware Simulator</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+            Real-time visual reflection of the ESP32 physical actuators and 16x2 LCD screen.
+          </p>
+
+          <div class="virtual-hardware-box">
+            <!-- 16x2 LCD Display -->
+            <div class="virtual-lcd-screen">
+              <div class="lcd-line" id="lcdLine1">SmartMed Box   </div>
+              <div class="lcd-line" id="lcdLine2">Status: OK      </div>
+            </div>
+
+            <!-- Actuator Cluster (LEDs, Buzzer, Relay) -->
+            <div class="actuator-row">
+              <div class="actuator-item">
+                <div class="led-bulb red" id="ledRed"></div>
+                <span class="actuator-label">Red (Alert)</span>
+              </div>
+
+              <div class="actuator-item">
+                <div class="led-bulb yellow" id="ledYellow"></div>
+                <span class="actuator-label">Yellow (Dose)</span>
+              </div>
+
+              <div class="actuator-item">
+                <div class="led-bulb green on" id="ledGreen"></div>
+                <span class="actuator-label">Green (OK)</span>
+              </div>
+
+              <div class="actuator-item">
+                <div class="buzzer-indicator" id="buzzerState">
+                  <span>🔔</span> <span id="buzzerText">OFF</span>
+                </div>
+                <span class="actuator-label">Buzzer</span>
+              </div>
+
+              <div class="actuator-item">
+                <div class="sensor-badge badge-gray" id="relayState">OFF</div>
+                <span class="actuator-label">Relay</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Interactive Action Simulation Controls -->
+        <div class="card">
+          <h2 class="card-title">🎮 Interactive Hardware Controls</h2>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+            Simulate physical user and sensor actions to test and present the full logic flow:
+          </p>
+
+          <div class="action-grid">
+            <button class="btn btn-green" onclick="triggerAction('take_medicine')">
+              💊 Take Medicine
+            </button>
+            <button class="btn btn-yellow" onclick="triggerAction('open_box')">
+              📂 Open Lid
+            </button>
+            <button class="btn btn-red" onclick="triggerAction('tilt_box')">
+              🔄 Move/Tilt Box
+            </button>
+            <button class="btn btn-red" onclick="triggerAction('trigger_missed')">
+              ⚠️ Missed Dose
+            </button>
+            <button class="btn btn-blue" onclick="triggerAction('trigger_reminder')">
+              ⏰ Trigger Alarm
+            </button>
+            <button class="btn btn-outline" onclick="triggerAction('reset')">
+              🔄 Reset System
+            </button>
+          </div>
+        </div>
+
+        <!-- Bluetooth Command Terminal -->
+        <div class="card">
+          <h2 class="card-title">📶 ESP32 Bluetooth Terminal</h2>
+          
+          <div class="bluetooth-terminal">
+            <div class="terminal-chips">
+              <span class="chip" onclick="sendBtCommand('STATUS')">STATUS</span>
+              <span class="chip" onclick="sendBtCommand('BUZZER ON')">BUZZER ON</span>
+              <span class="chip" onclick="sendBtCommand('BUZZER OFF')">BUZZER OFF</span>
+              <span class="chip" onclick="sendBtCommand('RESET')">RESET</span>
+              <span class="chip" onclick="sendBtCommand('TAKEN')">TAKEN</span>
+            </div>
+
+            <div class="terminal-input-group">
+              <input type="text" id="btInput" class="terminal-input" placeholder="Enter BT command (e.g. STATUS, RESET)..." onkeypress="if(event.key === 'Enter') sendCustomBt();">
+              <button class="btn btn-blue" style="padding: 8px 16px;" onclick="sendCustomBt()">Send</button>
+            </div>
+
+            <div class="terminal-log" id="btTerminalLog">
+              [BT Terminal Ready - Connected to SmartMedicineBox_BT]<br>
+              > Type command or click chips above to test.
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p><strong>Smart Medicine Box IoT System</strong> | Third-Year B.Tech Information Technology Mini Project</p>
+      <p style="margin-top: 4px;">ESP32 Wi-Fi / Bluetooth &bull; DS3231 RTC &bull; IR Sensor &bull; LDR Sensor &bull; Tilt Sensor &bull; Flask & SQLite</p>
+    </footer>
+
+  </div>
+
+  <!-- Real-Time Client JavaScript -->
+  <script>
+    let audioEnabled = true;
+    let audioCtx = null;
+    let buzzerBeepInterval = null;
+
+    // Toggle sound
+    document.getElementById('muteAudioBtn').addEventListener('click', function() {
+      audioEnabled = !audioEnabled;
+      this.textContent = audioEnabled ? '🔊 Sound: ON' : '🔇 Sound: MUTED';
+    });
+
+    // Browser audio beep synth for hardware buzzer simulation
+    function playBeep(frequency = 880, duration = 0.15) {
+      if (!audioEnabled) return;
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(frequency, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+      } catch (e) {
+        console.warn("Audio Context init error:", e);
+      }
+    }
+
+    // Trigger manual action
+    async function triggerAction(actionName) {
+      try {
+        const res = await fetch('/api/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: actionName })
+        });
+        const data = await res.json();
+        pollLiveStatus();
+      } catch (err) {
+        console.error("Action failed:", err);
+      }
+    }
+
+    // Send Bluetooth command
+    async function sendBtCommand(cmd) {
+      const logBox = document.getElementById('btTerminalLog');
+      logBox.innerHTML += `<br><span style="color: #60a5fa;">> TX: ${cmd}</span>`;
+      try {
+        const res = await fetch('/api/bluetooth-command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        const data = await res.json();
+        logBox.innerHTML += `<br><span style="color: #34d399;">< RX: ${data.response}</span>`;
+        logBox.scrollTop = logBox.scrollHeight;
+        pollLiveStatus();
+      } catch (err) {
+        logBox.innerHTML += `<br><span style="color: #ef4444;">! Error communicating</span>`;
+      }
+    }
+
+    function sendCustomBt() {
+      const input = document.getElementById('btInput');
+      const val = input.value.trim();
+      if (val) {
+        sendBtCommand(val);
+        input.value = '';
+      }
+    }
+
+    // Real-time polling function
+    async function pollLiveStatus() {
+      try {
+        const res = await fetch('/api/live-status');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update clock
+        document.getElementById('liveClock').textContent = data.time_display;
+        document.getElementById('liveDate').textContent = data.date_display;
+
+        // Update Stats
+        if (data.stats) {
+          document.getElementById('statCompliance').textContent = data.stats.compliance_rate + '%';
+          document.getElementById('statTaken').textContent = data.stats.taken_count;
+          document.getElementById('statMissed').textContent = data.stats.missed_count;
+          document.getElementById('statSecurity').textContent = (data.stats.box_open_count + data.stats.box_moved_count);
+        }
+
+        // Update Main Status Hero
+        const statusHero = document.getElementById('statusHero');
+        const mainText = document.getElementById('mainStatusText');
+        const mainDesc = document.getElementById('mainStatusDesc');
+        mainText.textContent = data.status;
+
+        statusHero.className = 'status-hero';
+        if (data.status === 'Medicine Taken') {
+          statusHero.classList.add('state-taken');
+          mainDesc.textContent = "Medication intake verified via IR sensor. Great job!";
+        } else if (data.status === 'Medicine Missed') {
+          statusHero.classList.add('state-missed');
+          mainDesc.textContent = "WARNING: Scheduled medication dosage was missed. Alarm is sounding.";
+        } else if (data.status === 'Reminder Active') {
+          statusHero.classList.add('state-reminder');
+          mainDesc.textContent = "Scheduled medicine reminder active! Please open box and take pill.";
+        } else if (data.status === 'Box Open') {
+          statusHero.classList.add('state-reminder');
+          mainDesc.textContent = "Box lid opened (LDR high). Awaiting pill removal.";
+        } else if (data.status === 'Box Moved') {
+          statusHero.classList.add('state-missed');
+          mainDesc.textContent = "Security Alert: Smart Medicine Box was moved or tilted!";
+        } else {
+          mainDesc.textContent = "All sensors nominal. Box is secure and waiting for next dose.";
+        }
+
+        // Alert banner
+        const banner = document.getElementById('alertBanner');
+        const bannerText = document.getElementById('alertBannerText');
+        if (data.status === 'Medicine Missed') {
+          banner.className = 'alert-banner missed';
+          bannerText.textContent = '🚨 CRITICAL ALERT: Scheduled medication dose was missed! Buzzer active.';
+        } else if (data.status === 'Reminder Active') {
+          banner.className = 'alert-banner reminder';
+          bannerText.textContent = '⏰ MEDICATION REMINDER: It is time for scheduled dose.';
+        } else if (data.status === 'Box Moved') {
+          banner.className = 'alert-banner tamper';
+          bannerText.textContent = '⚠️ TAMPER ALERT: Box tilt or displacement detected.';
+        } else {
+          banner.style.display = 'none';
+        }
+
+        // Update Sensor HUD Badges
+        const cardIR = document.getElementById('cardIR');
+        const badgeIR = document.getElementById('badgeIR');
+        if (data.ir === 0) {
+          cardIR.className = 'sensor-card active-pill';
+          badgeIR.className = 'sensor-badge badge-green';
+          badgeIR.textContent = 'Hand Present (0)';
+        } else {
+          cardIR.className = 'sensor-card';
+          badgeIR.className = 'sensor-badge badge-gray';
+          badgeIR.textContent = 'Clear (1)';
+        }
+
+        const cardLDR = document.getElementById('cardLDR');
+        const badgeLDR = document.getElementById('badgeLDR');
+        if (data.ldr === 1) {
+          cardLDR.className = 'sensor-card active-open';
+          badgeLDR.className = 'sensor-badge badge-yellow';
+          badgeLDR.textContent = 'Lid Open (1)';
+        } else {
+          cardLDR.className = 'sensor-card';
+          badgeLDR.className = 'sensor-badge badge-gray';
+          badgeLDR.textContent = 'Lid Closed (0)';
+        }
+
+        const cardTilt = document.getElementById('cardTilt');
+        const badgeTilt = document.getElementById('badgeTilt');
+        if (data.tilt === 1) {
+          cardTilt.className = 'sensor-card active-tilt';
+          badgeTilt.className = 'sensor-badge badge-red';
+          badgeTilt.textContent = 'Tilted/Moved (1)';
+        } else {
+          cardTilt.className = 'sensor-card';
+          badgeTilt.className = 'sensor-badge badge-gray';
+          badgeTilt.textContent = 'Level/Normal (0)';
+        }
+
+        // Update Virtual 16x2 LCD
+        document.getElementById('lcdLine1').textContent = data.lcd_line1 || "SmartMed Box   ";
+        document.getElementById('lcdLine2').textContent = data.lcd_line2 || "Status: OK      ";
+
+        // Update Virtual LEDs
+        const ledRed = document.getElementById('ledRed');
+        const ledYellow = document.getElementById('ledYellow');
+        const ledGreen = document.getElementById('ledGreen');
+
+        ledRed.className = 'led-bulb red ' + (data.led_state?.red ? 'on' : '');
+        ledYellow.className = 'led-bulb yellow ' + (data.led_state?.yellow ? 'on' : '');
+        ledGreen.className = 'led-bulb green ' + (data.led_state?.green ? 'on' : '');
+
+        // Update Buzzer
+        const buzzerState = document.getElementById('buzzerState');
+        const buzzerText = document.getElementById('buzzerText');
+        if (data.buzzer_state === 1) {
+          buzzerState.className = 'buzzer-indicator on';
+          buzzerText.textContent = 'BEEPING';
+          playBeep(data.status === 'Medicine Missed' ? 1200 : 750, 0.1);
+        } else {
+          buzzerState.className = 'buzzer-indicator';
+          buzzerText.textContent = 'OFF';
+        }
+
+        // Update Relay
+        const relayState = document.getElementById('relayState');
+        if (data.relay_state === 1) {
+          relayState.className = 'sensor-badge badge-green';
+          relayState.textContent = 'ACTIVE (1)';
+        } else {
+          relayState.className = 'sensor-badge badge-gray';
+          relayState.textContent = 'IDLE (0)';
+        }
+
+      } catch (err) {
+        console.warn("Live status poll failed:", err);
+      }
+    }
+
+    // Auto-poll every 1.5 seconds
+    setInterval(pollLiveStatus, 1500);
+    // Initial call
+    pollLiveStatus();
+  </script>
+
+</body>
+</html>

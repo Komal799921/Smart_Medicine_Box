@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Historical Event Logs - Smart Medicine Box</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Header Navigation -->
+    <header class="app-header">
+      <div class="brand-section">
+        <div class="brand-icon">📜</div>
+        <div>
+          <h1 class="brand-title">Event History Logs</h1>
+          <p class="brand-subtitle">Smart Medicine Box Telemetry & Audit Trail</p>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <a href="/" class="nav-btn">📊 Back to Dashboard</a>
+        <a href="/history" class="nav-btn active">📜 History Logs</a>
+        <a href="/api/export-csv" class="nav-btn btn-blue" download>📥 Export CSV</a>
+      </nav>
+    </header>
+
+    <!-- Stats Summary Row -->
+    <section class="stats-grid">
+      <div class="stat-card blue">
+        <div class="stat-header">
+          <span>Total Recorded Events</span>
+          <span>📑</span>
+        </div>
+        <div class="stat-value">{{ stats.total_logs }}</div>
+        <div class="stat-footer">Stored in SQLite database</div>
+      </div>
+
+      <div class="stat-card green">
+        <div class="stat-header">
+          <span>Doses Taken</span>
+          <span>✅</span>
+        </div>
+        <div class="stat-value">{{ stats.taken_count }}</div>
+        <div class="stat-footer">IR sensor verified</div>
+      </div>
+
+      <div class="stat-card red">
+        <div class="stat-header">
+          <span>Doses Missed</span>
+          <span>⚠️</span>
+        </div>
+        <div class="stat-value">{{ stats.missed_count }}</div>
+        <div class="stat-footer">Timeout alert logs</div>
+      </div>
+
+      <div class="stat-card yellow">
+        <div class="stat-header">
+          <span>Compliance Rate</span>
+          <span>🎯</span>
+        </div>
+        <div class="stat-value">{{ stats.compliance_rate }}%</div>
+        <div class="stat-footer">Overall patient adherence</div>
+      </div>
+    </section>
+
+    <!-- Filter & Search Bar -->
+    <div class="card">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary); align-self: center;">Filter:</span>
+          <a href="/history?filter=All" class="filter-btn {% if current_filter == 'All' %}active{% endif %}">All</a>
+          <a href="/history?filter=Medicine Taken" class="filter-btn {% if current_filter == 'Medicine Taken' %}active{% endif %}">✅ Medicine Taken</a>
+          <a href="/history?filter=Medicine Missed" class="filter-btn {% if current_filter == 'Medicine Missed' %}active{% endif %}">⚠️ Medicine Missed</a>
+          <a href="/history?filter=Box Open" class="filter-btn {% if current_filter == 'Box Open' %}active{% endif %}">📂 Box Open</a>
+          <a href="/history?filter=Box Moved" class="filter-btn {% if current_filter == 'Box Moved' %}active{% endif %}">🔄 Box Moved</a>
+          <a href="/history?filter=Reminder Active" class="filter-btn {% if current_filter == 'Reminder Active' %}active{% endif %}">⏰ Reminder Active</a>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <form method="GET" action="/history" style="display: flex; gap: 8px;">
+            <input type="hidden" name="filter" value="{{ current_filter }}">
+            <input type="text" name="search" class="terminal-input" placeholder="Search timestamp or notes..." value="{{ search_term }}" style="width: 220px; padding: 6px 12px; font-size: 12px;">
+            <button type="submit" class="btn btn-blue" style="padding: 6px 12px; font-size: 12px;">Search</button>
+            {% if search_term %}
+              <a href="/history?filter={{ current_filter }}" class="btn btn-outline" style="padding: 6px 10px; font-size: 12px;">Clear</a>
+            {% endif %}
+          </form>
+
+          <button class="btn btn-red" style="padding: 6px 12px; font-size: 12px;" onclick="clearDatabase()">🗑️ Clear Logs</button>
+        </div>
+      </div>
+
+      <!-- Logs Table -->
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">ID</th>
+              <th style="width: 170px;">Timestamp</th>
+              <th style="width: 140px;">Status</th>
+              <th style="width: 100px;">IR Sensor</th>
+              <th style="width: 100px;">LDR Sensor</th>
+              <th style="width: 100px;">Tilt Sensor</th>
+              <th style="width: 100px;">Alarm</th>
+              <th>Diagnostic Details / Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if records|length == 0 %}
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 30px; color: var(--text-muted);">
+                No historical records found matching current criteria.
+              </td>
+            </tr>
+            {% else %}
+              {% for r in records %}
+              <tr>
+                <td><strong style="color: var(--text-secondary);">#{{ r.id }}</strong></td>
+                <td style="font-family: var(--font-mono); font-size: 12px;">{{ r.time }}</td>
+                <td>
+                  {% if r.status == 'Medicine Taken' %}
+                    <span class="sensor-badge badge-green">✅ Medicine Taken</span>
+                  {% elif r.status == 'Medicine Missed' %}
+                    <span class="sensor-badge badge-red">⚠️ Medicine Missed</span>
+                  {% elif r.status == 'Box Open' %}
+                    <span class="sensor-badge badge-yellow">📂 Box Open</span>
+                  {% elif r.status == 'Box Moved' %}
+                    <span class="sensor-badge badge-red">🔄 Box Moved</span>
+                  {% elif r.status == 'Reminder Active' %}
+                    <span class="sensor-badge badge-blue">⏰ Reminder Active</span>
+                  {% else %}
+                    <span class="sensor-badge badge-gray">{{ r.status }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.ir == 0 %}
+                    <span style="color: var(--accent-green); font-weight: 600;">Hand (0)</span>
+                  {% else %}
+                    <span style="color: var(--text-muted);">Clear (1)</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.ldr == 1 %}
+                    <span style="color: var(--accent-yellow); font-weight: 600;">Light (1)</span>
+                  {% else %}
+                    <span style="color: var(--text-muted);">Dark (0)</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.tilt == 1 %}
+                    <span style="color: var(--accent-red); font-weight: 600;">Moved (1)</span>
+                  {% else %}
+                    <span style="color: var(--text-muted);">Level (0)</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if r.alert_active == 1 %}
+                    <span class="sensor-badge badge-red" style="font-size: 11px;">ON</span>
+                  {% else %}
+                    <span class="sensor-badge badge-gray" style="font-size: 11px;">OFF</span>
+                  {% endif %}
+                </td>
+                <td style="color: var(--text-secondary); font-size: 12px;">{{ r.notes or '—' }}</td>
+              </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p><strong>Smart Medicine Box IoT System</strong> &bull; Database: SQLite (<code>database/medicine.db</code>)</p>
+    </footer>
+
+  </div>
+
+  <script>
+    async function clearDatabase() {
+      if (confirm("Are you sure you want to clear all history records? This cannot be undone.")) {
+        try {
+          const res = await fetch('/api/clear-history', { method: 'POST' });
+          const data = await res.json();
+          alert(data.message);
+          window.location.reload();
+        } catch (e) {
+          alert("Failed to clear database logs.");
+        }
+      }
+    }
+  </script>
+
+</body>
+</html>
